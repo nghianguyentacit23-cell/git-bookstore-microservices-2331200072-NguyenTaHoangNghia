@@ -41,6 +41,14 @@ development credentials `guest` / `guest`.
 When an order is created, `order-service` publishes an `ORDER_CREATED` message
 to the durable RabbitMQ queue `order.created`.
 
+## Evidence
+
+- [Docker Desktop: all services running](screenshots/01-docker-desktop-services.png)
+- [Successful login](screenshots/02-login-success.png)
+- [Product created](screenshots/03-product-created.png)
+- [Order created](screenshots/04-order-created.png)
+- [RabbitMQ event and queue state](screenshots/05-rabbitmq-event-log.png)
+
 ## Stop
 
 ```bash

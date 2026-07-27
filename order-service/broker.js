@@ -1,27 +1,61 @@
 import amqplib from 'amqplib';
 
 let channel = null;
+let connecting = null;
 
 export async function connectToBroker() {
-  try {
+  if (channel) return channel;
+  if (connecting) return connecting;
+
+  connecting = (async () => {
     const url = process.env.RABBITMQ_URL || 'amqp://message-broker:5672';
     const conn = await amqplib.connect(url);
-    channel = await conn.createChannel();
+    const nextChannel = await conn.createChannel();
+
+    conn.on('close', () => {
+      channel = null;
+      console.warn('RabbitMQ connection closed');
+    });
+    conn.on('error', err => {
+      channel = null;
+      console.error('RabbitMQ connection error:', err.message);
+    });
+
+    channel = nextChannel;
     console.log('Connected to RabbitMQ');
-  } catch (err) {
-    console.error('RabbitMQ connection error:', err.message);
-    setTimeout(connectToBroker, 5000); // retry after 5s
+    return channel;
+  })();
+
+  try {
+    return await connecting;
+  } finally {
+    connecting = null;
   }
 }
 
 export async function publishMessage(queue, message) {
-  if (!channel) {
-    throw new Error('RabbitMQ channel is not ready');
+  let lastError;
+
+  for (let attempt = 1; attempt <= 10; attempt += 1) {
+    try {
+      const activeChannel = channel || await connectToBroker();
+      await activeChannel.assertQueue(queue, { durable: true });
+      return activeChannel.sendToQueue(
+        queue,
+        Buffer.from(typeof message === 'string' ? message : JSON.stringify(message)),
+        { persistent: true }
+      );
+    } catch (err) {
+      lastError = err;
+      channel = null;
+      console.warn(`RabbitMQ publish attempt ${attempt} failed:`, err.message);
+      if (attempt < 10) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
   }
-  await channel.assertQueue(queue, { durable: true });
-  return channel.sendToQueue(queue, Buffer.from(typeof message === 'string' ? message : JSON.stringify(message)), {
-    persistent: true
-  });
+
+  throw lastError;
 }
 
 export default { connectToBroker, publishMessage };
