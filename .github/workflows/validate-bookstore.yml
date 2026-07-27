@@ -93,6 +93,26 @@ jobs:
             http://localhost:8000/api/orders/$ORDER_ID \
             | jq -e --argjson id "$ORDER_ID" '.id == $id and .status == "PENDING"'
 
+          # Verify the exact direct service endpoints required by Lab5.pdf.
+          curl --fail-with-body --show-error --silent \
+            http://localhost:8002/products \
+            | jq -e --argjson id "$PRODUCT_ID" 'any(.[]; .id == $id)'
+          curl --fail-with-body --show-error --silent \
+            http://localhost:8002/products/$PRODUCT_ID \
+            | jq -e --argjson id "$PRODUCT_ID" '.id == $id'
+
+          curl --fail-with-body --show-error --silent \
+            -X POST http://localhost:8001/users/register \
+            -H "Content-Type: application/json" \
+            -d '{"username":"github-actions-direct","password":"Lab5Test123"}' \
+            | jq -e '.token | length > 0'
+
+          curl --fail-with-body --show-error --silent \
+            -X POST http://localhost:8003/orders \
+            -H "Content-Type: application/json" \
+            -d "{\"productId\":$PRODUCT_ID,\"quantity\":1}" \
+            | jq -e '.id > 0 and .status == "PENDING"'
+
       - name: Verify RabbitMQ event
         shell: bash
         run: |

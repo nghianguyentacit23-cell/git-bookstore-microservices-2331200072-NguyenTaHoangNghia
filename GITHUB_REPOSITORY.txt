@@ -1,0 +1,5 @@
+Public GitHub repository:
+https://github.com/nghianguyentacit23-cell/git-bookstore-microservices-2331200072-NguyenTaHoangNghia
+
+Repository visibility: public
+Default branch: main

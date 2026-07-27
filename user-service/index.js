@@ -24,7 +24,7 @@ function auth(req, res, next) {
 }
 
 // Register
-app.post('/register', async (req, res) => {
+async function registerUser(req, res) {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -43,7 +43,10 @@ app.post('/register', async (req, res) => {
     console.error('Register error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
+
+// Support both the direct Lab endpoint and the gateway-stripped path.
+app.post(['/register', '/users/register'], registerUser);
 
 // Login
 app.post('/login', async (req, res) => {

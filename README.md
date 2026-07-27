@@ -3,6 +3,9 @@
 Student ID: `2331200072`  
 Student name: `Nguyen Ta Hoang Nghia`
 
+Public GitHub repository:  
+<https://github.com/nghianguyentacit23-cell/git-bookstore-microservices-2331200072-NguyenTaHoangNghia>
+
 ## Architecture
 
 - Frontend: Express static web application
@@ -25,6 +28,14 @@ RabbitMQ Management is available at <http://localhost:15672> with the default
 development credentials `guest` / `guest`.
 
 ## API routes
+
+Direct service endpoints required by the Lab:
+
+- Product service (`localhost:8002`): `GET /products`, `GET /products/:id`
+- User service (`localhost:8001`): `POST /users/register`
+- Order service (`localhost:8003`): `POST /orders`
+
+API Gateway endpoints:
 
 - `POST /api/users/register`
 - `POST /api/users/login`

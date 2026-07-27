@@ -10,7 +10,7 @@ app.use(express.json());
 connectToBroker().catch(err => console.error('Broker init error', err));
 
 // Create order
-app.post('/', async (req, res) => {
+async function createOrder(req, res) {
   try {
     const productId = Number(req.body.productId);
     const quantity = Number(req.body.quantity);
@@ -71,7 +71,10 @@ app.post('/', async (req, res) => {
     console.error('Create order error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
+
+// Support both the direct Lab endpoint and the gateway-stripped path.
+app.post(['/', '/orders'], createOrder);
 
 // List orders
 app.get('/', async (_req, res) => {

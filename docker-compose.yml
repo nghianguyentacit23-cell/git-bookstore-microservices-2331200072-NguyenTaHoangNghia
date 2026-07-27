@@ -21,6 +21,8 @@ services:
   user-service:
     build: ./user-service
     restart: unless-stopped
+    ports:
+      - "8001:8001"
     environment:
       - MONGO_URL=mongodb://user-db:27017/bookstore
       - MONGO_DB=bookstore

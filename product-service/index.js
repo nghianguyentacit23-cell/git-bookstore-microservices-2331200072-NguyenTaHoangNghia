@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 // List products
-app.get('/', async (_req, res) => {
+async function listProducts(_req, res) {
   try {
     const result = await db.query('SELECT * FROM books ORDER BY id ASC');
     res.json(result.rows);
@@ -13,10 +13,10 @@ app.get('/', async (_req, res) => {
     console.error('List products error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
 
 // Get product by id
-app.get('/:id', async (req, res) => {
+async function getProduct(req, res) {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
@@ -33,7 +33,11 @@ app.get('/:id', async (req, res) => {
     console.error('Get product error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
+
+// Support both direct Lab endpoints and gateway-stripped paths.
+app.get(['/', '/products'], listProducts);
+app.get(['/:id', '/products/:id'], getProduct);
 
 // Create product
 app.post('/', async (req, res) => {
