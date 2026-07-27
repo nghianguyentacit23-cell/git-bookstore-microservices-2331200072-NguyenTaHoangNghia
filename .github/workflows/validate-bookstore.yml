@@ -12,21 +12,29 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build and start all services
         run: docker compose up --build -d
 
-      - name: Wait for the API Gateway
+      - name: Wait for all API routes
         shell: bash
         run: |
           for attempt in {1..60}; do
-            if curl --fail --silent http://localhost:8000/api/products > /dev/null; then
-              echo "Bookstore API is ready."
+            PRODUCT_STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost:8000/api/products || true)
+            USER_STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost:8000/api/users/me || true)
+            ORDER_STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" http://localhost:8000/api/orders || true)
+
+            echo "Attempt $attempt: products=$PRODUCT_STATUS users=$USER_STATUS orders=$ORDER_STATUS"
+            if [ "$PRODUCT_STATUS" = "200" ] \
+              && [ "$USER_STATUS" = "401" ] \
+              && [ "$ORDER_STATUS" = "200" ]; then
+              echo "All bookstore API routes are ready."
               exit 0
             fi
             sleep 2
           done
+
           docker compose ps
           docker compose logs --no-color
           exit 1
@@ -36,32 +44,66 @@ jobs:
         run: |
           set -euo pipefail
 
-          REGISTER_RESPONSE=$(curl --fail --silent             -X POST http://localhost:8000/api/users/register             -H "Content-Type: application/json"             -d '{"username":"github-actions","password":"Lab5Test123"}')
-          TOKEN=$(echo "$REGISTER_RESPONSE" | jq -r '.token')
+          if ! curl --fail-with-body --show-error --silent \
+            -X POST http://localhost:8000/api/users/register \
+            -H "Content-Type: application/json" \
+            -d '{"username":"github-actions","password":"Lab5Test123"}' \
+            --output register-response.json; then
+            cat register-response.json || true
+            exit 1
+          fi
+          cat register-response.json
+          TOKEN=$(jq -r '.token' register-response.json)
           test -n "$TOKEN"
           test "$TOKEN" != "null"
 
-          curl --fail --silent http://localhost:8000/api/users/me             -H "Authorization: Bearer $TOKEN" | jq -e '.username == "github-actions"'
+          curl --fail-with-body --show-error --silent \
+            http://localhost:8000/api/users/me \
+            -H "Authorization: Bearer $TOKEN" \
+            | jq -e '.username == "github-actions"'
 
-          PRODUCT_RESPONSE=$(curl --fail --silent             -X POST http://localhost:8000/api/products             -H "Content-Type: application/json"             -d '{"title":"Clean Code","author":"Robert C. Martin","price":25.50,"stock":20}')
-          PRODUCT_ID=$(echo "$PRODUCT_RESPONSE" | jq -r '.id')
+          if ! curl --fail-with-body --show-error --silent \
+            -X POST http://localhost:8000/api/products \
+            -H "Content-Type: application/json" \
+            -d '{"title":"Clean Code","author":"Robert C. Martin","price":25.50,"stock":20}' \
+            --output product-response.json; then
+            cat product-response.json || true
+            exit 1
+          fi
+          cat product-response.json
+          PRODUCT_ID=$(jq -r '.id' product-response.json)
           test "$PRODUCT_ID" -gt 0
 
-          ORDER_RESPONSE=$(curl --fail --silent             -X POST http://localhost:8000/api/orders             -H "Content-Type: application/json"             -d "{\"productId\":$PRODUCT_ID,\"quantity\":2}")
-          ORDER_ID=$(echo "$ORDER_RESPONSE" | jq -r '.id')
+          if ! curl --fail-with-body --show-error --silent \
+            -X POST http://localhost:8000/api/orders \
+            -H "Content-Type: application/json" \
+            -d "{\"productId\":$PRODUCT_ID,\"quantity\":2}" \
+            --output order-response.json; then
+            cat order-response.json || true
+            exit 1
+          fi
+          cat order-response.json
+          ORDER_ID=$(jq -r '.id' order-response.json)
           test "$ORDER_ID" -gt 0
 
-          curl --fail --silent http://localhost:8000/api/products/$PRODUCT_ID             | jq -e --argjson id "$PRODUCT_ID" '.id == $id'
-          curl --fail --silent http://localhost:8000/api/orders/$ORDER_ID             | jq -e --argjson id "$ORDER_ID" '.id == $id and .status == "PENDING"'
+          curl --fail-with-body --show-error --silent \
+            http://localhost:8000/api/products/$PRODUCT_ID \
+            | jq -e --argjson id "$PRODUCT_ID" '.id == $id'
+          curl --fail-with-body --show-error --silent \
+            http://localhost:8000/api/orders/$ORDER_ID \
+            | jq -e --argjson id "$ORDER_ID" '.id == $id and .status == "PENDING"'
 
       - name: Verify RabbitMQ event
         shell: bash
         run: |
           set -euo pipefail
-          docker compose logs order-service             | grep -F "Published ORDER_CREATED event to RabbitMQ"
+          docker compose logs order-service \
+            | grep -F "Published ORDER_CREATED event to RabbitMQ"
 
           for attempt in {1..30}; do
-            if curl --fail --silent -u guest:guest               http://localhost:15672/api/queues/%2F/order.created               | jq -e '.name == "order.created"' > /dev/null; then
+            if curl --fail --silent -u guest:guest \
+              http://localhost:15672/api/queues/%2F/order.created \
+              | jq -e '.name == "order.created"' > /dev/null; then
               echo "RabbitMQ queue order.created exists."
               exit 0
             fi
