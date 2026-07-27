@@ -1,0 +1,90 @@
+name: Validate Bookstore Microservices
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build and start all services
+        run: docker compose up --build -d
+
+      - name: Wait for the API Gateway
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent http://localhost:8000/api/products > /dev/null; then
+              echo "Bookstore API is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs --no-color
+          exit 1
+
+      - name: Test registration, product and order flow
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REGISTER_RESPONSE=$(curl --fail --silent             -X POST http://localhost:8000/api/users/register             -H "Content-Type: application/json"             -d '{"username":"github-actions","password":"Lab5Test123"}')
+          TOKEN=$(echo "$REGISTER_RESPONSE" | jq -r '.token')
+          test -n "$TOKEN"
+          test "$TOKEN" != "null"
+
+          curl --fail --silent http://localhost:8000/api/users/me             -H "Authorization: Bearer $TOKEN" | jq -e '.username == "github-actions"'
+
+          PRODUCT_RESPONSE=$(curl --fail --silent             -X POST http://localhost:8000/api/products             -H "Content-Type: application/json"             -d '{"title":"Clean Code","author":"Robert C. Martin","price":25.50,"stock":20}')
+          PRODUCT_ID=$(echo "$PRODUCT_RESPONSE" | jq -r '.id')
+          test "$PRODUCT_ID" -gt 0
+
+          ORDER_RESPONSE=$(curl --fail --silent             -X POST http://localhost:8000/api/orders             -H "Content-Type: application/json"             -d "{\"productId\":$PRODUCT_ID,\"quantity\":2}")
+          ORDER_ID=$(echo "$ORDER_RESPONSE" | jq -r '.id')
+          test "$ORDER_ID" -gt 0
+
+          curl --fail --silent http://localhost:8000/api/products/$PRODUCT_ID             | jq -e --argjson id "$PRODUCT_ID" '.id == $id'
+          curl --fail --silent http://localhost:8000/api/orders/$ORDER_ID             | jq -e --argjson id "$ORDER_ID" '.id == $id and .status == "PENDING"'
+
+      - name: Verify RabbitMQ event
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose logs order-service             | grep -F "Published ORDER_CREATED event to RabbitMQ"
+
+          for attempt in {1..30}; do
+            if curl --fail --silent -u guest:guest               http://localhost:15672/api/queues/%2F/order.created               | jq -e '.name == "order.created"' > /dev/null; then
+              echo "RabbitMQ queue order.created exists."
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+
+      - name: Collect Docker evidence
+        if: always()
+        shell: bash
+        run: |
+          docker compose ps > compose-status.txt || true
+          docker compose logs --no-color > docker-compose.log || true
+
+      - name: Upload Docker evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstore-docker-evidence
+          path: |
+            compose-status.txt
+            docker-compose.log
+
+      - name: Stop services
+        if: always()
+        run: docker compose down -v
